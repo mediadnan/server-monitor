@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f4f7" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{TITLE}}">
+<meta name="robots" content="noindex,nofollow">
+<title>{{TITLE}}</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-in">
+    <div class="top">
+      <div class="brand">
+        <img src="/static/icon.svg" alt="" width="28" height="28">
+        <div>
+          <h1>{{TITLE}}</h1>
+          <p id="status"><span class="dot"></span><span id="status-text">connecting…</span></p>
+        </div>
+      </div>
+      <div class="seg" id="range" role="group" aria-label="Time range">
+        <button type="button" data-range="fast" aria-pressed="true">30 min</button>
+        <button type="button" data-range="6h" aria-pressed="false">6 h</button>
+        <button type="button" data-range="24h" aria-pressed="false">24 h</button>
+      </div>
+    </div>
+    <nav class="chips" id="chips" aria-label="Categories"></nav>
+  </div>
+</header>
+<main id="app" class="wrap"></main>
+<footer class="wrap note">
+  Energy: GPU power is reported by the card and CPU power by its RAPL counters when available.
+  Everything marked <em>est.</em> is modelled; the wall figure is usually within 10–20% of a plug-in
+  meter and can be calibrated (see the README).
+</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

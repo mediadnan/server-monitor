@@ -1,0 +1,43 @@
+# Example deployment. Copy it, then adjust the environment to your machine.
+# All variables are documented in the README.
+services:
+  monitor:
+    image: ghcr.io/mediadnan/server-monitor:latest
+    restart: unless-stopped
+    ports:
+      # Only reachable from the host itself. Put a reverse proxy with HTTPS
+      # in front (or use an SSH tunnel / VPN) to reach it from elsewhere.
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - /sys:/sys:ro                  # sensors, network counters, RAPL
+      - monitor-data:/data            # keeps 24 h of history across restarts
+    environment:
+      MONITOR_TITLE: Server Monitor
+      MONITOR_USER: admin
+      MONITOR_PASSWORD: ${MONITOR_PASSWORD:?set MONITOR_PASSWORD}
+      DATA_DIR: /data
+      # Hardware specifics, all optional:
+      # FAN_LABELS: "fan1=CPU fan,fan2=Case fan"
+      # CPU_IDLE_W: "10"
+      # CPU_MAX_W: "65"
+      # BASE_W: "20"
+      # PSU_WATTS: "550"
+      # PSU_EFF: "10:0.80,20:0.87,50:0.90,100:0.87"
+      # ENERGY_PRICE: "0.25"
+      # CURRENCY: "EUR"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    # NVIDIA GPU: install the NVIDIA Container Toolkit on the host, uncomment
+    # the next line and add these two to `environment` above:
+    #   NVIDIA_VISIBLE_DEVICES: all
+    #   NVIDIA_DRIVER_CAPABILITIES: utility    (injects nvidia-smi)
+    # runtime: nvidia
+
+volumes:
+  monitor-data:
