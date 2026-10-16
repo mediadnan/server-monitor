@@ -85,6 +85,12 @@ class Config:
     disks: list = field(default_factory=list)
     disk_paths: dict = field(default_factory=lambda: {"System": "/"})
 
+    # Host "/" mounted read-only in the container. When set, every mounted
+    # disk of the host gets a disk-space tile.
+    host_root: str = ""
+    disk_labels: dict = field(default_factory=dict)   # host mountpoint -> label
+    disk_exclude: list = field(default_factory=list)  # host mountpoints to skip
+
     # Power model.
     cpu_idle_w: float = 10.0
     cpu_max_w: float = 65.0
@@ -100,6 +106,8 @@ class Config:
     def from_env(cls, env=None):
         env = os.environ if env is None else env
         psu_raw = _str(env, "PSU_EFF")
+        host_root = _str(env, "HOST_ROOT")
+        host_root = host_root.rstrip("/") or host_root   # "/" stays "/"
         return cls(
             port=int(_str(env, "PORT") or 8088),
             title=_str(env, "MONITOR_TITLE") or "Server Monitor",
@@ -113,7 +121,11 @@ class Config:
             extra_temps=_pairs(env, "EXTRA_TEMPS"),
             net_ifaces=_list(env, "NET_IFACES"),
             disks=_list(env, "DISKS"),
-            disk_paths=_pairs(env, "DISK_PATHS") or {"System": "/"},
+            disk_paths=_pairs(env, "DISK_PATHS") or ({} if host_root else {"System": "/"}),
+            host_root=host_root,
+            disk_labels={k.rstrip("/") or "/": v
+                         for k, v in _pairs(env, "DISK_LABELS").items()},
+            disk_exclude=[p.rstrip("/") or "/" for p in _list(env, "DISK_EXCLUDE")],
             cpu_idle_w=_float(env, "CPU_IDLE_W", 10.0),
             cpu_max_w=_float(env, "CPU_MAX_W", 65.0),
             base_w=_float(env, "BASE_W", 20.0),

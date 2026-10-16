@@ -11,11 +11,17 @@ services:
     volumes:
       - /sys:/sys:ro                  # sensors, network counters, RAPL
       - monitor-data:/data            # keeps 24 h of history across restarts
+      # Disk space for every mounted disk (see "All disks" in the README):
+      # - /:/hostfs:ro,rslave
     environment:
       MONITOR_TITLE: Server Monitor
       MONITOR_USER: admin
       MONITOR_PASSWORD: ${MONITOR_PASSWORD:?set MONITOR_PASSWORD}
       DATA_DIR: /data
+      # With the /hostfs mount above:
+      # HOST_ROOT: /hostfs
+      # DISK_LABELS: "/srv/data=Data,/mnt/backup=Backup"
+      # DISK_EXCLUDE: "/boot/efi"
       # Hardware specifics, all optional:
       # FAN_LABELS: "fan1=CPU fan,fan2=Case fan"
       # CPU_IDLE_W: "10"
