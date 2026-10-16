@@ -5,7 +5,7 @@ dashboard that works well on a phone.
 
 ![Dashboard](docs/screenshot.jpg)
 
-- **Usage**: CPU, memory, GPU, GPU memory, disk space
+- **Usage**: CPU, memory, GPU, GPU memory, disk space (one disk or all of them)
 - **I/O**: read/write per disk, download/upload per network interface
 - **Temps**: CPU, GPU, NVMe, SATA drives, motherboard, plus any sensor you add
 - **Energy**: CPU package and GPU power (measured when possible) and an
@@ -76,7 +76,10 @@ dashboard can be reached by anyone but you.
 | `EXTRA_TEMPS` | *(none)* | Extra temperature sensors: `Chipset=nct6798/temp3,VRM=nct6798/temp5`. |
 | `NET_IFACES` | *(auto)* | Interfaces to show, for example `eth0,wlan0`. By default only physical NICs (docker bridges, veth and VPN tunnels are skipped). |
 | `DISKS` | *(auto)* | Disks to show I/O for, for example `nvme0n1,sda`. By default every whole disk with activity. |
-| `DISK_PATHS` | `System=/` | Filesystems for the disk-space tiles, as `label=path` inside the container. To add a data drive, mount it read-only (`/mnt/data:/disks/data:ro`) and add `Data=/disks/data`. |
+| `DISK_PATHS` | `System=/` (none with `HOST_ROOT`) | Filesystems for the disk-space tiles, as `label=path` inside the container. To add a single data drive, mount it read-only (`/mnt/data:/disks/data:ro`) and add `Data=/disks/data`. To show every disk, use `HOST_ROOT` instead. |
+| `HOST_ROOT` | *(empty)* | Where the host's `/` is mounted in the container, for example `/hostfs`. Shows a disk-space tile for every mounted disk. See [All disks](#all-disks). |
+| `DISK_LABELS` | *(mountpoint name)* | Names for those tiles by host mountpoint: `/srv/data=Data,/mnt/backup=Backup`. The host's `/` is called "System". |
+| `DISK_EXCLUDE` | *(none)* | Host mountpoints to hide, for example `/boot,/boot/efi`. |
 | `CPU_IDLE_W` | `10` | CPU power at idle, used only when RAPL can't be read. |
 | `CPU_MAX_W` | `65` | CPU power at 100 % load (≈ its TDP/PPT), used only when RAPL can't be read. |
 | `BASE_W` | `20` | Everything else (motherboard, RAM, drives, fans), DC side. |
@@ -84,6 +87,35 @@ dashboard can be reached by anyone but you.
 | `PSU_WATTS` | *(empty)* | Rated PSU output. Needed for a `PSU_EFF` curve. |
 | `ENERGY_PRICE` | *(empty)* | Price per kWh, to show the cost of the last 24 h. |
 | `CURRENCY` | *(empty)* | Shown after the cost, for example `EUR`. |
+
+### All disks
+
+By default the disk-space tile shows the disk that holds Docker's data. To
+see every disk, mount the host's root read-only and tell the monitor where:
+
+```yaml
+    volumes:
+      - /:/hostfs:ro,rslave
+    environment:
+      HOST_ROOT: /hostfs
+      DISK_LABELS: "/srv/data=Data,/mnt/backup=Backup"   # optional
+      DISK_EXCLUDE: "/boot/efi"                          # optional
+```
+
+The monitor reads the host's mount table and shows one tile per filesystem
+on a block device. Snaps (loop devices), tmpfs, overlay and other virtual
+filesystems are skipped, and so are bind mounts and subvolumes of a disk
+that already has a tile. The note under each tile names the physical
+disk(s), through partitions, LUKS, LVM and md RAID (for example
+`412 / 916 GB · nvme0n1`). The tile for the host's `/` keeps the id
+`space_system`, so its history carries on from the default setup.
+
+`rslave` lets the container see disks mounted after it started, such as an
+encrypted drive unlocked by hand. Without it, restart the container after
+mounting a disk. A disk the container can't see is left out rather than
+shown with the wrong numbers.
+
+To check which disks the host has: `findmnt -rno TARGET,SOURCE,FSTYPE`.
 
 ### Finding sensor names
 
@@ -131,8 +163,16 @@ Platinum `10:0.85,20:0.92,50:0.94,100:0.90`.
   Linux capabilities, makes the filesystem read-only and sets
   `no-new-privileges`, so the process can read files and serve HTTP and do little else.
   If you don't need measured CPU power, add `user: "65534:65534"`.
-- **Mounts:** `/sys` read-only is the only host mount besides the data volume.
-  The host's root filesystem is not mounted.
+- **Mounts:** by default `/sys` read-only is the only host mount besides the
+  data volume. With [All disks](#all-disks) the host's `/` is mounted
+  read-only as well. Docker makes that recursive on kernel 5.12+, but a disk
+  mounted on the host *after* the container started can arrive through
+  `rslave` with its own write flag, so restart the container after mounting
+  disks if that matters to you. Because the process runs as root, it can
+  read root-only files on the host, such as `/etc/shadow` or other
+  containers' secrets. With `user: "65534:65534"` it can only read what any
+  user on the host can, and disk space still works, but CPU power becomes
+  an estimate.
 - **Browser:** strict Content-Security-Policy (no inline scripts, no third-party
   requests), `X-Frame-Options: DENY`, `no-referrer`, `noindex`.
 - **Repository:** contains no hardware- or host-specific values. Keep yours in

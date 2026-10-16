@@ -6,6 +6,7 @@ import unittest
 import urllib.error
 import urllib.request
 
+from monitor.collectors.system import DiskSpaceCollector
 from monitor.config import Config, parse_psu_curve
 from monitor.history import History
 from monitor.monitor import Monitor
@@ -110,6 +111,137 @@ class CollectorTest(unittest.TestCase):
         for tile in s.tiles.values():
             for key, _ in tile.series:
                 self.assertIn(key, s.values, tile.id)
+
+
+class DiskSpaceTest(unittest.TestCase):
+    """Host mounts seen through HOST_ROOT. All fake mountpoints live on one
+    temp filesystem, so they share its device number."""
+
+    def setUp(self):
+        self.host = FakeHost()
+        h = self.host
+        self.hostfs = os.path.join(h.root, "hostfs")
+        for d in ("srv/immich-data", "mnt/immich_backup", "data/coolify/backups",
+                  "boot/efi", "snap/core/1", "run", "pool", "pool/home", "media/my disk"):
+            os.makedirs(os.path.join(self.hostfs, d), exist_ok=True)
+        st = os.stat(self.hostfs)
+        self.dev = f"{os.major(st.st_dev)}:{os.minor(st.st_dev)}"
+
+        # LVM on an NVMe partition, LUKS on a whole disk, LUKS on a partition,
+        # md RAID1 of two partitions.
+        nvme, sata = "sys/devices/pci0/nvme/nvme0n1", "sys/devices/pci0/ata"
+        h.link("sys/class/block/nvme0n1p3", f"{nvme}/nvme0n1p3")
+        h.write(f"{nvme}/nvme0n1p3/partition", 3)
+        h.link("sys/class/block/sda", f"{sata}/sda")
+        h.link("sys/class/block/sdb1", f"{sata}/sdb/sdb1")
+        h.write(f"{sata}/sdb/sdb1/partition", 1)
+        for disk in ("sdc", "sdd"):
+            h.link(f"sys/class/block/{disk}1", f"{sata}/{disk}/{disk}1")
+            h.write(f"{sata}/{disk}/{disk}1/partition", 1)
+        for dm, name, slaves in (("dm-0", "ubuntu--vg-ubuntu--lv", ["nvme0n1p3"]),
+                                 ("dm-1", "immich_crypt", ["sda"]),
+                                 ("dm-2", "immich_backup", ["sdb1"]),
+                                 ("md0", "", ["sdc1", "sdd1"])):
+            h.link(f"sys/class/block/{dm}", f"sys/devices/virtual/block/{dm}")
+            if name:
+                h.write(f"sys/devices/virtual/block/{dm}/dm/name", name)
+            for slave in slaves:
+                h.link(f"sys/devices/virtual/block/{dm}/slaves/{slave}",
+                       f"sys/class/block/{slave}")
+        # The host's /dev resolves mapper names for two of them; "/" is found
+        # through sysfs dm/name instead.
+        os.makedirs(os.path.join(self.hostfs, "dev/mapper"))
+        for name, dm in (("immich_crypt", "dm-1"), ("immich_backup", "dm-2")):
+            os.symlink(f"../{dm}", os.path.join(self.hostfs, "dev/mapper", name))
+
+    def tearDown(self):
+        self.host.close()
+
+    def mountinfo(self, *extra):
+        d = self.dev
+        lines = [
+            f"25 1 {d} / / rw,relatime shared:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw",
+            f"26 25 0:5 / /run rw shared:2 - tmpfs tmpfs rw",
+            f"27 25 7:3 / /snap/core/1 ro shared:3 - squashfs /dev/loop3 ro",
+            f"28 25 {d} / /boot/efi rw shared:4 - vfat /dev/nvme0n1p1 rw",
+            f"29 25 {d} / /srv/immich-data rw shared:5 - ext4 /dev/mapper/immich_crypt rw",
+            f"30 25 {d} / /mnt/immich_backup rw shared:6 - ext4 /dev/mapper/immich_backup rw",
+            f"31 25 {d} /coolify /data/coolify/backups rw shared:6 - ext4 /dev/mapper/immich_backup rw",
+            f"32 25 0:44 / /var/lib/docker/overlay2/x/merged rw - overlay overlay rw",
+        ] + list(extra)
+        self.host.write("hostfs/proc/1/mountinfo", "\n".join(lines))
+
+    def collect(self, **env):
+        cfg = Config.from_env(self.host.env(HOST_ROOT=self.hostfs, **env))
+        s = Sample(1000.0)
+        DiskSpaceCollector(cfg).collect(s)
+        return s
+
+    def test_config(self):
+        cfg = Config.from_env({"HOST_ROOT": "/hostfs/", "DISK_EXCLUDE": "/boot/efi/",
+                               "DISK_LABELS": "/srv/data/=Data"})
+        self.assertEqual(cfg.host_root, "/hostfs")
+        self.assertEqual(cfg.disk_paths, {})
+        self.assertEqual(cfg.disk_labels, {"/srv/data": "Data"})
+        self.assertEqual(cfg.disk_exclude, ["/boot/efi"])
+        cfg = Config.from_env({"HOST_ROOT": "/hostfs", "DISK_PATHS": "Docker=/"})
+        self.assertEqual(cfg.disk_paths, {"Docker": "/"})
+        self.assertEqual(Config.from_env({"HOST_ROOT": "/"}).host_root, "/")
+
+    def test_every_disk_once_with_labels(self):
+        self.mountinfo()
+        s = self.collect(DISK_LABELS="/srv/immich-data=Photos,/mnt/immich_backup=Backup",
+                         DISK_EXCLUDE="/boot/efi")
+        tiles = sorted(s.tiles.values(), key=lambda t: t.order)
+        self.assertEqual([t.id for t in tiles], ["space_system", "space_photos", "space_backup"])
+        self.assertEqual(tiles[1].label, "Disk space · Photos")
+        self.assertTrue(s.notes["space_system"].endswith("GB · nvme0n1"))
+        self.assertTrue(s.notes["space_photos"].endswith("GB · sda"))
+        self.assertTrue(s.notes["space_backup"].endswith("GB · sdb"))
+        for tile in tiles:
+            self.assertIn(tile.id, s.values)
+
+    def test_bind_mount_is_not_a_disk(self):
+        # Without labels and with the bind mount listed first, the
+        # filesystem's own root still wins.
+        self.mountinfo()
+        lines = self.host_lines()
+        lines.insert(1, lines.pop(6))
+        self.host.write("hostfs/proc/1/mountinfo", "\n".join(lines))
+        s = self.collect()
+        self.assertEqual(sorted(s.tiles), ["space_efi", "space_immich_backup",
+                                           "space_immich_data", "space_system"])
+        self.assertEqual(s.tiles["space_efi"].label, "Disk space · efi")
+        self.assertTrue(s.notes["space_efi"].endswith("GB"))   # unknown in fake sysfs
+
+    def test_hidden_mount_is_skipped(self):
+        # Mounted on the host after the container started, without rslave:
+        # the path inside the container is still the parent filesystem.
+        self.mountinfo("40 25 8:99 / /media/my\\040disk rw - ext4 /dev/sde1 rw")
+        s = self.collect(DISK_EXCLUDE="/boot/efi")
+        self.assertNotIn("space_my_disk", s.tiles)
+        self.mountinfo(f"40 25 {self.dev} / /media/my\\040disk rw - ext4 /dev/sde1 rw")
+        s = self.collect(DISK_EXCLUDE="/boot/efi")
+        self.assertEqual(s.tiles["space_my_disk"].label, "Disk space · my disk")
+
+    def test_raid_and_subvolumes(self):
+        # btrfs on md RAID1: two subvolumes of one filesystem are one tile.
+        d = self.dev
+        self.mountinfo(f"41 25 {d} /@pool /pool rw - btrfs /dev/md0 rw",
+                       f"42 41 {d} /@home /pool/home rw - btrfs /dev/md0 rw")
+        s = self.collect(DISK_EXCLUDE="/boot/efi")
+        self.assertIn("space_pool", s.tiles)
+        self.assertNotIn("space_home", s.tiles)
+        self.assertTrue(s.notes["space_pool"].endswith("GB · sdc, sdd"))
+
+    def test_unreadable_mountinfo_falls_back_to_host_root(self):
+        s = self.collect()
+        self.assertEqual(list(s.tiles), ["space_system"])
+        self.assertNotIn("·", s.notes["space_system"].split("GB")[1])
+
+    def host_lines(self):
+        with open(os.path.join(self.hostfs, "proc/1/mountinfo")) as f:
+            return f.read().strip().split("\n")
 
 
 class HistoryTest(unittest.TestCase):
