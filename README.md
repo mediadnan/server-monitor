@@ -5,7 +5,8 @@ dashboard that works well on a phone.
 
 ![Dashboard](docs/screenshot.jpg)
 
-- **Usage**: CPU, memory, GPU, GPU memory, disk space (one disk or all of them)
+- **Usage**: CPU, memory, GPU, GPU memory, and a fill bar for disk space
+  (one disk or all of them)
 - **I/O**: read/write per disk, download/upload per network interface
 - **Temps**: CPU, GPU, NVMe, SATA drives, motherboard, plus any sensor you add
 - **Energy**: CPU package and GPU power (measured when possible) and an
@@ -13,7 +14,9 @@ dashboard that works well on a phone.
 - **Fans**: RPM of every connected fan header, GPU fan speed
 
 Category chips (All · Usage · I/O · Temps · Energy · Fans) filter the page,
-with history views for 30 min, 6 h and 24 h. It uses one Python process from
+with history views for 30 min, 6 h and 24 h. Disk space changes too slowly
+for a history chart to say much, so those tiles show a bar that turns amber
+at 80 % and red at 90 %. It uses one Python process from
 the standard library and a few hundred lines of plain JavaScript, with no
 database or agents. Hardware is auto-detected, so you only configure what you
 want to rename or tune.
@@ -78,7 +81,7 @@ dashboard can be reached by anyone but you.
 | `DISKS` | *(auto)* | Disks to show I/O for, for example `nvme0n1,sda`. By default every whole disk with activity. |
 | `DISK_PATHS` | `System=/` (none with `HOST_ROOT`) | Filesystems for the disk-space tiles, as `label=path` inside the container. To add a single data drive, mount it read-only (`/mnt/data:/disks/data:ro`) and add `Data=/disks/data`. To show every disk, use `HOST_ROOT` instead. |
 | `HOST_ROOT` | *(empty)* | Where the host's `/` is mounted in the container, for example `/hostfs`. Shows a disk-space tile for every mounted disk. See [All disks](#all-disks). |
-| `DISK_LABELS` | *(mountpoint name)* | Names for those tiles by host mountpoint: `/srv/data=Data,/mnt/backup=Backup`. The host's `/` is called "System". |
+| `DISK_LABELS` | *(mountpoint name)* | Names for those tiles by host mountpoint: `/srv/data=Data,/mnt/backup=Backup`. Without a label, a tile is named after the last part of its mountpoint (`/mnt/Photos` becomes "Photos", `/boot` becomes "boot"), and the host's `/` is called "System". |
 | `DISK_EXCLUDE` | *(none)* | Host mountpoints to hide, for example `/boot,/boot/efi`. |
 | `CPU_IDLE_W` | `10` | CPU power at idle, used only when RAPL can't be read. |
 | `CPU_MAX_W` | `65` | CPU power at 100 % load (≈ its TDP/PPT), used only when RAPL can't be read. |
@@ -107,7 +110,8 @@ on a block device. Snaps (loop devices), tmpfs, overlay and other virtual
 filesystems are skipped, and so are bind mounts and subvolumes of a disk
 that already has a tile. The note under each tile names the physical
 disk(s), through partitions, LUKS, LVM and md RAID (for example
-`412 / 916 GB · nvme0n1`). The tile for the host's `/` keeps the id
+`412 / 916 GB · nvme0n1`, or `0.4 / 2.0 GB` for a filesystem under
+10 GB). The tile for the host's `/` keeps the id
 `space_system`, so its history carries on from the default setup.
 
 `rslave` lets the container see disks mounted after it started, such as an
@@ -217,6 +221,8 @@ python -m unittest -v
 To add a sensor, write a collector with `collect(sample)` that calls
 `sample.tile(Tile(...))` and `sample.set(key, value)`, then add it to
 `collectors/__init__.py`. The dashboard picks up new tiles automatically.
+A tile with `min`, `max` and `chart="bar"` is drawn as a fill bar instead of
+a history chart.
 
 ## License
 
