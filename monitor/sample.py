@@ -8,7 +8,8 @@ GROUPS = ("usage", "io", "temps", "energy", "fans")
 
 @dataclass
 class Tile:
-    """One card on the dashboard: a big current value plus a history chart.
+    """One card on the dashboard: a big current value plus a history chart,
+    or with chart="bar" a meter filled from min to max instead.
 
     A tile plots one or more series. For single-series tiles the series key
     is the tile id; multi-series tiles (disk read/write, network down/up)
@@ -30,6 +31,7 @@ class Tile:
     hot: float = None       # value >= hot is red
     low: float = None       # value <= low is amber (stalled fan)
     source: str = ""        # "measured" or "estimated" (energy tiles)
+    chart: str = ""         # "bar" = current-value meter, no history chart
     order: int = 50         # sort key inside its group
 
     def __post_init__(self):
