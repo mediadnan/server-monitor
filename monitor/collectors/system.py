@@ -131,9 +131,10 @@ class DiskSpaceCollector:
                 tid, n = f"{base}_{n}", n + 1
             used_ids.add(tid)
             s.tile(Tile(tid, "usage", f"Disk space · {label}", "%", min=0,
-                        max=100, warn=80, hot=90, order=20 + i))
+                        max=100, warn=80, hot=90, chart="bar", order=20 + i))
             s.set(tid, 100.0 * used / (used + avail))
-            note = f"{gb(used):.0f} / {gb(used + avail):.0f} GB"
+            dec = 1 if gb(used + avail) < 10 else 0   # small /boot: "0.4 / 2.0 GB"
+            note = f"{gb(used):.{dec}f} / {gb(used + avail):.{dec}f} GB"
             s.note(tid, f"{note} · {disks}" if disks else note)
 
     def _host_entries(self):

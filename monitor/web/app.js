@@ -168,6 +168,27 @@
     }
     card.notes = el('div', 'notes');
     root.appendChild(card.notes);
+    card.root = root;
+
+    if (tile.chart === 'bar') {
+      root.classList.add('has-meter');
+      card.meter = el('div', 'meter');
+      card.meter.setAttribute('role', 'meter');
+      card.meter.setAttribute('aria-label', tile.label);
+      card.meter.setAttribute('aria-valuemin', String(tile.min));
+      card.meter.setAttribute('aria-valuemax', String(tile.max));
+      card.fill = el('div', 'fill');
+      card.meter.appendChild(card.fill);
+      [tile.warn, tile.hot].forEach(function (mark) {
+        if (mark == null) return;
+        var m = el('i');
+        m.style.left = meterPct(tile, mark) + '%';
+        card.meter.appendChild(m);
+      });
+      root.appendChild(card.meter);
+      return card;
+    }
+
     card.canvas = el('canvas');
     card.canvas.setAttribute('role', 'img');
     card.canvas.setAttribute('aria-label', tile.label + ' history');
@@ -179,8 +200,11 @@
     card.canvas.addEventListener('pointerdown', move);
     card.canvas.addEventListener('pointerleave', leave);
     card.canvas.addEventListener('pointercancel', leave);
-    card.root = root;
     return card;
+  }
+
+  function meterPct(tile, v) {
+    return Math.max(0, Math.min(100, (v - tile.min) / (tile.max - tile.min) * 100));
   }
 
   function build() {
@@ -225,6 +249,11 @@
         card.num.nodeValue = f[0];
         card.unit.textContent = f[1];
         card.value.className = 'value ' + level(t, v);
+        if (card.meter) {
+          card.fill.style.width = (v == null ? 0 : meterPct(t, v)) + '%';
+          card.fill.className = 'fill ' + level(t, v);
+          card.meter.setAttribute('aria-valuenow', v == null ? '' : String(v));
+        }
       }
       var text = S.notes[t.id] || '';
       if (card.noteText !== text) {
@@ -238,6 +267,7 @@
   // ---- charts --------------------------------------------------------------
 
   function draw(card) {
+    if (!card.canvas) return;   // meter tiles have no history chart
     var cv = card.canvas, w = cv.clientWidth, h = cv.clientHeight;
     if (!w || !h) return;   // hidden by the category filter
     var dpr = window.devicePixelRatio || 1;

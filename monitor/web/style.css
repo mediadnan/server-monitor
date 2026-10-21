@@ -157,6 +157,17 @@ h2 i { width: 8px; height: 8px; border-radius: 50%; }
 .notes { color: var(--mut); font-size: 12px; min-height: 17px; }
 .notes div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 canvas { display: block; width: 100%; height: 76px; margin-top: 6px; touch-action: pan-y; }
+/* Meter tiles sit their bar on the card's bottom edge, level with the charts beside them. */
+.has-meter { display: flex; flex-direction: column; }
+.meter {
+  position: relative; margin: auto 0 8px; padding-top: 14px;
+  height: 10px; box-sizing: content-box;
+}
+.meter::before, .fill { position: absolute; left: 0; bottom: 0; height: 10px; border-radius: 999px; }
+.meter::before { content: ""; right: 0; background: var(--card-hi); }
+.fill { background: var(--usage); min-width: 4px; transition: width .4s ease; }
+.fill.ok { background: var(--ok); } .fill.warn { background: var(--warn); } .fill.hot { background: var(--hot); }
+.meter i { position: absolute; bottom: -3px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px; background: var(--mut); opacity: .55; }
 .ok { color: var(--ok); } .warn { color: var(--warn); } .hot { color: var(--hot); }
 .empty { color: var(--mut); font-size: 14px; padding: 28px 0; text-align: center; }
 
